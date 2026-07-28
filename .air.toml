@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/portfolio ./cmd/server"
+bin = "./tmp/portfolio"
+include_ext = ["go", "html", "css", "md"]
+exclude_dir = ["tmp", "bin", ".direnv", ".git"]
+delay = 100
+
+[misc]
+clean_on_exit = true
