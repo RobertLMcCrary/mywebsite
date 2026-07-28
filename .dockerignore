@@ -1,0 +1,6 @@
+.git
+.direnv
+.envrc
+bin/
+tmp/
+*.md
