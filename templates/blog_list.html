@@ -1,0 +1,19 @@
+{{define "title"}}Blog | Robert McCrary{{end}}
+
+{{define "content"}}
+<section>
+	<h1>Blog</h1>
+	{{if .Posts}}
+	<ul>
+		{{range .Posts}}
+		<li>
+			<time datetime="{{.Date.Format "2006-01-02"}}">{{.Date.Format "Jan 2, 2006"}}</time>
+			<a href="/blog/{{.Slug}}">{{.Title}}</a>
+		</li>
+		{{end}}
+	</ul>
+	{{else}}
+	<p>No posts yet.</p>
+	{{end}}
+</section>
+{{end}}
