@@ -1,0 +1,118 @@
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Test and Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Build Linux binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o server ./cmd/server
+
+      - name: Upload build artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: server
+          retention-days: 1
+
+  deploy:
+    name: Deploy to DigitalOcean
+    needs: ci
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy application
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          set -eu
+
+          tar -czf content.tar.gz -C content posts
+
+          scp server content.tar.gz \
+            "$SSH_USER@$SSH_HOST:/tmp/"
+
+          ssh "$SSH_USER@$SSH_HOST" 'bash -se' <<'EOF'
+          set -eu
+
+          APP_DIR=/home/robert/app
+          cd "$APP_DIR"
+
+          mkdir -p content
+
+          # Prepare new binary without modifying the running one
+          install -m 755 /tmp/server "$APP_DIR/server.new"
+
+          # Deploy blog content
+          tar -xzf /tmp/content.tar.gz -C "$APP_DIR/content"
+
+          # Atomically replace the executable
+          mv -f "$APP_DIR/server.new" "$APP_DIR/server"
+
+          # Restart the existing service
+          systemctl restart mywebsite
+          systemctl is-active --quiet mywebsite
+
+          # Clean up
+          rm -f /tmp/server /tmp/content.tar.gz
+
+          echo "Deployment completed"
+          EOF
+
